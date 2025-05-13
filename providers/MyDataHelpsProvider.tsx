@@ -67,9 +67,16 @@ class MyDataHelpsClient {
   }
   
   async authenticate() {
+    // Store subscription for cleanup
+    let subscription: any = null;
+
     try {
       // Generate a random state value for security
       const state = Math.random().toString(36).substring(2, 15);
+      await SecureStore.setItemAsync('oauth_state', state);
+      
+      // Set up URL event listener for the OAuth redirect
+      subscription = Linking.addListener('url', this.handleRedirect);
       
       // Build the authorization URL
       const authUrl = `${MDH_CONFIG.oauth.authUrl}?` +
@@ -78,21 +85,30 @@ class MyDataHelpsClient {
         `&response_type=code` +
         `&state=${encodeURIComponent(state)}`;
       
+      console.log('Opening auth URL:', authUrl);
+      
       // Open the authentication page in a browser
-      const result = await WebBrowser.openAuthSessionAsync(authUrl, MDH_CONFIG.oauth.redirectUri);
+      const result = await WebBrowser.openAuthSessionAsync(
+        authUrl, 
+        MDH_CONFIG.oauth.redirectUri
+      );
       
       if (result.type === 'success' && result.url) {
+        console.log('Auth successful with URL:', result.url);
         // Parse the URL to get the authorization code
         const url = new URL(result.url);
-        const code = url.searchParams.get('code');
-        const returnedState = url.searchParams.get('state');
+        const code = url.searchParams.get('code') || '';
+        const returnedState = url.searchParams.get('state') || '';
+        const savedState = await SecureStore.getItemAsync('oauth_state');
         
         // Verify state to prevent CSRF attacks
-        if (state !== returnedState) {
+        if (savedState !== returnedState && returnedState !== '') {
+          console.error('State mismatch in auth response', { savedState, returnedState });
           throw new Error('State mismatch in authentication response');
         }
         
         if (code) {
+          console.log('Exchanging code for token');
           // Exchange the code for tokens
           const tokenResponse = await axios.post(MDH_CONFIG.oauth.tokenUrl, {
             grant_type: 'authorization_code',
@@ -109,23 +125,50 @@ class MyDataHelpsClient {
           this.authToken = tokenResponse.data.access_token;
           this.refreshToken = tokenResponse.data.refresh_token;
           
-          await SecureStore.setItemAsync(AUTH_TOKEN_KEY, this.authToken);
-          await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, this.refreshToken);
+          if (this.authToken) {
+            await SecureStore.setItemAsync(AUTH_TOKEN_KEY, this.authToken);
+          }
+          if (this.refreshToken) {
+            await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, this.refreshToken);
+          }
           
           // Get participant ID
           const userResponse = await this.callApi('/v1/participants/me');
           const participantID = userResponse.data.id;
           
-          await SecureStore.setItemAsync(PARTICIPANT_ID_KEY, participantID);
+          if (participantID) {
+            await SecureStore.setItemAsync(PARTICIPANT_ID_KEY, participantID);
+          }
+          console.log('Authentication successful for participant:', participantID);
           
           return { success: true, participantID };
+        } else {
+          console.error('No code found in redirect URL');
         }
+      } else if (result.type === 'dismiss') {
+        console.log('Auth browser was dismissed');
+      } else {
+        console.error('Auth failed with result:', result);
       }
       
       return { success: false };
     } catch (error: unknown) {
       console.error('Authentication error:', error instanceof Error ? error.message : String(error));
       return { success: false };
+    } finally {
+      // Ensure we clean up the listener in case of errors
+      if (subscription) {
+        subscription.remove();
+      }
+    }
+  }
+  
+  // Handle redirects from OAuth flow
+  handleRedirect = (event: { url: string }) => {
+    console.log('Received redirect URL:', event.url);
+    if (event.url.startsWith(MDH_CONFIG.oauth.redirectUri)) {
+      // Close the browser window when we get the OAuth redirect
+      WebBrowser.dismissAuthSession();
     }
   }
   
@@ -200,9 +243,13 @@ class MyDataHelpsClient {
       this.authToken = response.data.access_token;
       this.refreshToken = response.data.refresh_token;
       
-      await SecureStore.setItemAsync(AUTH_TOKEN_KEY, this.authToken);
-      await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, this.refreshToken);
-    } catch (error) {
+      if (this.authToken) {
+        await SecureStore.setItemAsync(AUTH_TOKEN_KEY, this.authToken);
+      }
+      if (this.refreshToken) {
+        await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, this.refreshToken);
+      }
+    } catch (error: unknown) {
       // If refresh fails, clear tokens and force re-authentication
       await this.signOut();
       throw new Error('Failed to refresh authentication token');
@@ -210,34 +257,56 @@ class MyDataHelpsClient {
   }
   
   async connectExternalAccount(provider: string) {
+    // Store subscription for cleanup
+    let subscription: any = null;
+
     try {
-      // Build the authorization URL for the external provider
-      const authUrl = `${this.baseUrl}/v1/participants/me/externalaccounts/${provider}/authorize`;
+      console.log(`Initiating connection to ${provider}...`);
+      
+      // Register URL event listener for the OAuth redirect
+      subscription = Linking.addListener('url', this.handleRedirect);
       
       // Make API call to get authorization URL
       const response = await this.callApi(
         `/v1/participants/me/externalaccounts/${provider}/authorize`, 
-        'POST'
+        'POST',
+        { redirectUri: MDH_CONFIG.oauth.redirectUri }
       );
       
       if (response.data && response.data.authorizationUrl) {
+        const authUrl = response.data.authorizationUrl;
+        console.log(`Opening ${provider} authorization URL:`, authUrl);
+        
         // Open the authorization URL in a browser
         const result = await WebBrowser.openAuthSessionAsync(
-          response.data.authorizationUrl, 
+          authUrl,
           MDH_CONFIG.oauth.redirectUri
         );
         
-        if (result.type === 'success') {
+        console.log(`${provider} auth browser closed with result type:`, result.type);
+        
+        if (result.type === 'success' || result.type === 'dismiss') {
+          // Wait a moment to allow the connection to finalize on the server
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
           // Check if connection was successful
           const accountStatus = await this.getExternalAccountStatus(provider);
+          console.log(`${provider} connection status:`, accountStatus);
           return { success: accountStatus === 'Connected' };
         }
+      } else {
+        console.error('No authorization URL returned from API');
       }
       
       return { success: false };
     } catch (error: unknown) {
       console.error(`Error connecting to ${provider}:`, error instanceof Error ? error.message : String(error));
       return { success: false };
+    } finally {
+      // Ensure we clean up the listener in case of errors
+      if (subscription) {
+        subscription.remove();
+      }
     }
   }
   

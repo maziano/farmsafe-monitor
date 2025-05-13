@@ -6,10 +6,10 @@ export const MDH_CONFIG = {
   // OAuth2 authentication details
   oauth: {
     accountName: "MyDataHelps.A4117C8D.farmsafeapp",
-    redirectUri: "https://farmsafeapp.com/wellbeing/callback",
-    authUrl: "https://app.mydatahelps.org/oauth2/authorize",
-    tokenUrl: "https://app.mydatahelps.org/oauth2/token",
-    apiBaseUrl: "https://api.mydatahelps.org",
+    redirectUri: "healthmonitor://oauth/callback",
+    authUrl: "https://mydatahelps.com/oauth2/authorize",
+    tokenUrl: "https://mydatahelps.com/oauth2/token",
+    apiBaseUrl: "https://api.mydatahelps.com",
     keyId: "1b9f2285-e32b-f011-ad1f-0e0e6a19462f",
     privateKey: `-----BEGIN RSA PRIVATE KEY-----
 MIIEowIBAAKCAQEAwktz/zrB7m9ewjQfqnzQxt8s5OLG3XSP1Wb0cl667HS38XNz

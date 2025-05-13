@@ -2,14 +2,15 @@ export const MDH_CONFIG = {
   // MyDataHelps project configuration
   projectID: 'A4117C8D',
   environment: 'production',
+  clientID: 'MyDataHelps.A4117C8D.farmsafeapp',
   
   // OAuth2 authentication details
   oauth: {
     accountName: "MyDataHelps.A4117C8D.farmsafeapp",
     redirectUri: "healthmonitor://oauth/callback",
-    authUrl: "https://mydatahelps.com/oauth2/authorize",
-    tokenUrl: "https://mydatahelps.com/oauth2/token",
-    apiBaseUrl: "https://api.mydatahelps.com",
+    authUrl: "https://mydatahelps.org/projects/A4117C8D/oauth2/authorize",
+    tokenUrl: "https://mydatahelps.org/projects/A4117C8D/oauth2/token",
+    apiBaseUrl: "https://api.mydatahelps.org/v1",
     keyId: "1b9f2285-e32b-f011-ad1f-0e0e6a19462f",
     privateKey: `-----BEGIN RSA PRIVATE KEY-----
 MIIEowIBAAKCAQEAwktz/zrB7m9ewjQfqnzQxt8s5OLG3XSP1Wb0cl667HS38XNz
